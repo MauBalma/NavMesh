@@ -25,6 +25,8 @@ namespace Balma.Navigation
             public int v0;
             public int v1;
             public int v2;
+
+            public int group;
         }
 
         private struct HalfEdge
@@ -70,6 +72,10 @@ namespace Balma.Navigation
         private NativeMultiHashMap<int, int> vertexToEdgesOut;
         private NativeMultiHashMap<int, int> vertexToEdgesIn;
 
+        private GroupingHelper grouping;
+
+        public int GetIsland(int group) => grouping.GetIsland(group);
+
         public NavMesh(Allocator allocator)
         {
             vertexToIndex = new NativeHashMap<float3, int>(1024, allocator);
@@ -81,6 +87,8 @@ namespace Balma.Navigation
             
             vertexToEdgesOut = new NativeMultiHashMap<int, int>(1024, allocator);
             vertexToEdgesIn = new NativeMultiHashMap<int, int>(1024, allocator);
+
+            grouping = new GroupingHelper(allocator);
         }
 
         public void Dispose()
@@ -129,8 +137,21 @@ namespace Balma.Navigation
             edges[triangle.e0] = edge0;
             edges[triangle.e1] = edge1;
             edges[triangle.e2] = edge2;
+            
+            triangle.group = GroupingHelper.NO_GROUP;
+            JoinEdgeTriangles(edge0, ref triangle);
+            JoinEdgeTriangles(edge1, ref triangle);
+            JoinEdgeTriangles(edge2, ref triangle);
 
             triangles.Add(triangle);
+        }
+
+        void JoinEdgeTriangles(HalfEdge edge, ref Triangle triangle)
+        {
+            if(edge.IsBorder) return;
+            var otherTriangle = triangles[edges[edge.eAdjacent].t];
+            grouping.JoinGroups(ref triangle.@group, ref otherTriangle.@group);
+            triangles[edges[edge.eAdjacent].t] = otherTriangle;
         }
 
         private int AddOrGetVertex(float3 vertex)

@@ -13,8 +13,13 @@ public class Test : MonoBehaviour
     public MeshFilter[] meshFilters;
     public bool drawVertexIndices = true;
     public bool drawEdges = true;
+    public bool drawIslands = true;
+    public bool drawAStar = true;
+    public bool drawStartVisibleVertices = true;
     
     public NavMesh navMesh;
+
+    private static readonly float3 drawOffset = new float3(0, 1, 0) * 0.005f;
 
     private void Start()
     {
@@ -37,12 +42,18 @@ public class Test : MonoBehaviour
 
     private void Update()
     {
+        if(drawAStar) DoAStarPath();
+        if(drawStartVisibleVertices) DrawStartVisibility();
+    }
+
+    private void DoAStarPath()
+    {
         using var startResult = new NativeReference<NavMesh.RayCastResult>(Allocator.TempJob);
         using var endResult = new NativeReference<NavMesh.RayCastResult>(Allocator.TempJob);
-        
+
         var startJobHandle = new NavMesh.RayCastJob(navMesh, startHandle.position, Vector3.down, startResult).Schedule();
         var endJobHandle = new NavMesh.RayCastJob(navMesh, endHandle.position, Vector3.down, endResult).Schedule();
-        
+
         JobHandle.CombineDependencies(startJobHandle, endJobHandle).Complete();
 
         if (startResult.Value.hit)
@@ -69,25 +80,50 @@ public class Test : MonoBehaviour
         {
             using var pathResult = new NativeReference<bool>(Allocator.TempJob);
             using var path = new NativeList<int>(Allocator.TempJob);
-            var aStarJobHandle = new NavMesh.AStarJob(navMesh, startResult.Value.navPoint, endResult.Value.navPoint, pathResult, path).Schedule();
-            
-            aStarJobHandle.Complete();
+            new NavMesh.AStarJob(navMesh, startResult.Value.navPoint, endResult.Value.navPoint, pathResult, path).Run();
 
             if (pathResult.Value)
             {
-                var drawOffset = new float3(0,1,0) * 0.01f;
                 if (path.Length > 0)
                 {
-                    Debug.DrawLine(navMesh.GetPosition(path[0]) + drawOffset, endResult.Value.navPoint.worldPoint + drawOffset, Color.blue, 0, false);
-                    for (int i = 0; i < path.Length-1; i++)
-                        Debug.DrawLine(navMesh.GetPosition(path[i]) + drawOffset, navMesh.GetPosition(path[i + 1]) + drawOffset, Color.blue, 0, false);
-                    Debug.DrawLine(navMesh.GetPosition(path[path.Length-1]) + drawOffset, startResult.Value.navPoint.worldPoint + drawOffset, Color.blue, 0, false);
+                    Debug.DrawLine(navMesh.GetPosition(path[0]) + drawOffset,endResult.Value.navPoint.worldPoint + drawOffset, Color.blue, 0, false);
+                    for (int i = 0; i < path.Length - 1; i++)
+                        Debug.DrawLine(navMesh.GetPosition(path[i]) + drawOffset,navMesh.GetPosition(path[i + 1]) + drawOffset, Color.blue, 0, false);
+                    Debug.DrawLine(navMesh.GetPosition(path[path.Length - 1]) + drawOffset,startResult.Value.navPoint.worldPoint + drawOffset, Color.blue, 0, false);
                 }
                 else
                 {
-                    Debug.DrawLine(endResult.Value.navPoint.worldPoint + drawOffset, startResult.Value.navPoint.worldPoint + drawOffset, Color.blue, 0, false);
+                    Debug.DrawLine(endResult.Value.navPoint.worldPoint + drawOffset,startResult.Value.navPoint.worldPoint + drawOffset, Color.blue, 0, false);
                 }
             }
+        }
+    }
+    
+    private void DrawStartVisibility()
+    {
+        using var startResult = new NativeReference<NavMesh.RayCastResult>(Allocator.TempJob);
+
+        var startJobHandle = new NavMesh.RayCastJob(navMesh, startHandle.position, Vector3.down, startResult).Schedule();
+        startJobHandle.Complete();
+
+        if (startResult.Value.hit)
+        {
+            Debug.DrawLine(startResult.Value.navPoint.worldPoint, startHandle.position, Color.green, 0, true);
+            DebugExtension.DebugWireSphere(startResult.Value.navPoint.worldPoint, Color.green, 0.01f, 0, true);
+
+            var visibleVertices = new NativeList<NavMesh.Link>(Allocator.TempJob);
+            navMesh.GenerateLinks(startResult.Value.navPoint.worldPoint, startResult.Value.navPoint.triangleIndex, ref visibleVertices, Int32.MaxValue);
+
+            for (int i = 0; i < visibleVertices.Length; i++)
+            {
+                Debug.DrawLine(startResult.Value.navPoint.worldPoint + drawOffset, navMesh.GetPosition(visibleVertices[i].vNeighbour) + drawOffset, Color.red, 0, true);
+            }
+
+            visibleVertices.Dispose();
+        }
+        else
+        {
+            Debug.DrawLine(startHandle.position, startHandle.position + Vector3.down * 1000, Color.red, 0, true);
         }
     }
 
