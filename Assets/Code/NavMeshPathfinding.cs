@@ -102,6 +102,28 @@ namespace Balma.Navigation
             }
         }
         
+        [BurstCompile]
+        public struct ParentFieldJob : IJob
+        {
+            [ReadOnly] private NavMesh navMesh;
+            private int startTriangleIndex;
+            private float3 start;
+            private NativeArray<FlowFieldNode> field;
+
+            public ParentFieldJob(NavMesh navMesh, int startTriangleIndex, float3 start, NativeArray<FlowFieldNode> field)
+            {
+                this.navMesh = navMesh;
+                this.startTriangleIndex = startTriangleIndex;
+                this.start = start;
+                this.field = field;
+            }
+
+            public void Execute()
+            {
+                navMesh.GetParentField(startTriangleIndex, start, field);
+            }
+        }
+        
         public NativeArray<FlowFieldNode> GetParentField(int startTriangleIndex, float3 start, NativeArray<FlowFieldNode> field)
         {
             var open = new DecreseableMinHeap<int>(Allocator.Temp);

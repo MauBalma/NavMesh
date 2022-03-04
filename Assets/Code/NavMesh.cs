@@ -106,6 +106,7 @@ namespace Balma.Navigation
             vertices.Dispose();
             vertexToEdgesOut.Dispose();
             vertexToEdgesIn.Dispose();
+            vertexLinks.Dispose();
         }
         
         //TODO Jobify

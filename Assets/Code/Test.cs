@@ -163,7 +163,6 @@ public class Test : MonoBehaviour
             DebugExtension.DebugWireSphere(startResult.Value.navPoint.worldPoint, Color.green, 0.01f, 0, true);
 
             var visibleVertices = new NativeList<NavMesh.Link>(Allocator.TempJob);
-            //navMesh.GenerateLinks(startResult.Value.navPoint.worldPoint, startResult.Value.navPoint.triangleIndex, ref visibleVertices, Int32.MaxValue);
             new NavMesh.GenerateLinksJob(navMesh, startResult.Value.navPoint.worldPoint, startResult.Value.navPoint.triangleIndex, Int32.MaxValue, visibleVertices).Run();
 
             for (int i = 0; i < visibleVertices.Length; i++)
@@ -192,8 +191,7 @@ public class Test : MonoBehaviour
             DebugExtension.DebugWireSphere(startResult.Value.navPoint.worldPoint, Color.green, 0.01f, 0, true);
 
             var field = new NativeArray<NavMesh.FlowFieldNode>(navMesh.VertexCount, Allocator.TempJob);
-
-            navMesh.GetParentField(startResult.Value.navPoint.triangleIndex, startResult.Value.navPoint.worldPoint, field);
+            new NavMesh.ParentFieldJob(navMesh, startResult.Value.navPoint.triangleIndex, startResult.Value.navPoint.worldPoint, field).Run();
 
             for (int i = 0; i < field.Length; i++)
             {
