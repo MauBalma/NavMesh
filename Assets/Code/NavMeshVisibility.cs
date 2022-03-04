@@ -1,4 +1,6 @@
-﻿using Unity.Collections;
+﻿using Unity.Burst;
+using Unity.Collections;
+using Unity.Jobs;
 using Unity.Mathematics;
 
 namespace Balma.Navigation
@@ -43,8 +45,31 @@ namespace Balma.Navigation
             Right,
         }
 
-        //Should this be a job?
-        public void GenerateLinks(float3 position, int triangleIndex, ref NativeList<Link> container, int maxLinks)
+        [BurstCompile]
+        public struct GenerateLinksJob : IJob
+        {
+            [ReadOnly] private NavMesh navMesh;
+            private float3 position;
+            private int triangleIndex;
+            private int maxLinks;
+            [WriteOnly] private NativeList<Link> result;
+
+            public GenerateLinksJob(NavMesh navMesh, float3 position, int triangleIndex, int maxLinks, NativeList<Link> result)
+            {
+                this.navMesh = navMesh;
+                this.position = position;
+                this.triangleIndex = triangleIndex;
+                this.result = result;
+                this.maxLinks = maxLinks;
+            }
+
+            public void Execute()
+            {
+                navMesh.GenerateLinks(position, triangleIndex, ref result, maxLinks);
+            }
+        }
+
+        public void GenerateLinks(float3 position, int triangleIndex, ref NativeList<Link> result, int maxLinks)
         {
             var count = 0;
 
@@ -55,9 +80,9 @@ namespace Balma.Navigation
             var vertex1 = vertices[startTriangle.v1];
             var vertex2 = vertices[startTriangle.v2];
 
-            container.Add(new Link(startTriangle.v0, math.distance(position, vertex0)));
-            container.Add(new Link(startTriangle.v1, math.distance(position, vertex1)));
-            container.Add(new Link(startTriangle.v2, math.distance(position, vertex2)));
+            result.Add(new Link(startTriangle.v0, math.distance(position, vertex0)));
+            result.Add(new Link(startTriangle.v1, math.distance(position, vertex1)));
+            result.Add(new Link(startTriangle.v2, math.distance(position, vertex2)));
 
             count += 3;
 
@@ -73,10 +98,10 @@ namespace Balma.Navigation
             conesOpen.Add(cone1);
             conesOpen.Add(cone2);
 
-            ProcessCones(ref conesOpen, ref container, position, count, maxLinks);
+            ProcessCones(ref conesOpen, ref result, position, count, maxLinks);
             conesOpen.Clear();
         }
-
+        
         private void ProcessCones(ref NativeList<VisibilityCone> open, ref NativeList<Link> container, float3 pivot, int count, int max)
         {
             while (open.Length > 0)
@@ -97,9 +122,68 @@ namespace Balma.Navigation
                 PostprocessCone(ref open, cone, visibility, candidate, edge);
             }
         }
+        
+        private void GenerateLinks(int vertexIndex, NativeMultiHashMap<int, Link> container, int maxLinks)
+        {
+            var count = 0;
+            
+            var conesOpen = new NativeList<VisibilityCone>(Allocator.Temp);
+            var pivot = vertices[vertexIndex];
 
-        private bool ProcessCone(VisibilityCone cone, out HalfEdge edge, out int candidateIndex, out float3 candidate,
-            out PortalTest visibility)
+            var inEdges = vertexToEdgesIn.GetValuesForKey(vertexIndex);
+            
+            while (inEdges.MoveNext())
+            {
+                var inEdge = edges[inEdges.Current];
+
+                if (inEdge.IsBorder)
+                {
+                    var conePivot = vertices[inEdge.v0];
+                    container.Add(vertexIndex, new Link(inEdge.v0, math.distance(pivot.xz, conePivot.xz)));
+                    count++;
+                }
+            }
+
+            var outEdges = vertexToEdgesOut.GetValuesForKey(vertexIndex);
+            while (outEdges.MoveNext())
+            {
+                var outEdge = edges[outEdges.Current];
+
+                var conePivot = vertices[outEdge.v1];
+                container.Add(vertexIndex, new Link(outEdge.v1, math.distance(pivot.xz, conePivot.xz)));
+                count++;
+
+                var edge = edges[outEdge.eNext];
+                var cone = new VisibilityCone(pivot, vertices[outEdge.v1], vertices[edge.v1], edge);
+                conesOpen.Add(cone);
+            }
+
+            ProcessCones(ref conesOpen, ref container, pivot, vertexIndex, count, maxLinks);
+            conesOpen.Clear();
+        }
+        
+        private void ProcessCones(ref NativeList<VisibilityCone> open, ref NativeMultiHashMap<int, Link> container, float3 pivot, int vertexIndex, int count, int max)
+        {
+            while (open.Length > 0)
+            {
+                if(count >= max) return;
+                
+                var cone = open[open.Length - 1];
+                open.RemoveAtSwapBack(open.Length - 1);
+
+                if (cone.edge.IsBorder) continue;
+
+                if (ProcessCone(cone, out var edge, out var candidateIndex, out var candidate, out var visibility))
+                {
+                    container.Add(vertexIndex, new Link(candidateIndex, math.distance(pivot.xz, vertices[candidateIndex].xz)));
+                    count++;
+                }
+
+                PostprocessCone(ref open, cone, visibility, candidate, edge);
+            }
+        }
+
+        private bool ProcessCone(VisibilityCone cone, out HalfEdge edge, out int candidateIndex, out float3 candidate, out PortalTest visibility)
         {
             edge = edges[cone.edge.eAdjacent];
 
@@ -110,8 +194,7 @@ namespace Balma.Navigation
             return visibility == PortalTest.Inside;
         }
 
-        private void PostprocessCone(ref NativeList<VisibilityCone> open, VisibilityCone cone, PortalTest visibility,
-            float3 candidate, HalfEdge edge)
+        private void PostprocessCone(ref NativeList<VisibilityCone> open, VisibilityCone cone, PortalTest visibility, float3 candidate, HalfEdge edge)
         {
             var leftCone = cone;
             if (visibility != PortalTest.Left)

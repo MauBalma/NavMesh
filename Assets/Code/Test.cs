@@ -1,16 +1,27 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Balma.Navigation;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
+using Random = Unity.Mathematics.Random;
 
 public class Test : MonoBehaviour
 {
+    [Serializable]
+    public struct MeshSetting
+    {
+        public MeshFilter meshFilter;
+        [Range(0,1f)] public float missingTriangles;
+    }
+    
     public Transform startHandle;
     public Transform endHandle;
     
     public MeshFilter[] meshFilters;
+    public MeshSetting[] meshSettings;
     public bool drawVertexIndices = true;
     public bool drawEdges = true;
     public bool drawIslands = true;
@@ -23,7 +34,7 @@ public class Test : MonoBehaviour
 
     private void Start()
     {
-        navMesh = new NavMesh(Allocator.Persistent);
+        navMesh = new NavMesh(Allocator.Persistent, int.MaxValue);
 
         foreach (var meshFilter in meshFilters)
         {
@@ -38,6 +49,44 @@ public class Test : MonoBehaviour
                     meshFilter.transform.TransformPoint(originalMesh.vertices[originalMesh.triangles[i + 2]]));
             }
         }
+        
+        foreach (var meshSetting in meshSettings)
+        {
+            var meshFilter = meshSetting.meshFilter;
+            
+            if (!meshFilter.gameObject.activeSelf) continue;
+
+            var newMesh = new Mesh();
+            newMesh.vertices = meshFilter.sharedMesh.vertices.ToArray();
+
+            var tris = new List<int>();
+            var rng = new Random(420);
+
+            for (int i = 0; i < meshFilter.sharedMesh.triangles.Length; i+=3)
+            {
+                if(rng.NextFloat() < meshSetting.missingTriangles) continue;
+                
+                tris.Add(meshFilter.sharedMesh.triangles[i]);
+                tris.Add(meshFilter.sharedMesh.triangles[i+1]);
+                tris.Add(meshFilter.sharedMesh.triangles[i+2]);
+            }
+            
+            newMesh.triangles = tris.ToArray();
+            newMesh.RecalculateNormals();
+
+            meshFilter.sharedMesh = newMesh;
+
+            var originalMesh = newMesh;
+            for (int i = 0; i < originalMesh.triangles.Length; i += 3)
+            {
+                navMesh.AddTriangle(
+                    meshFilter.transform.TransformPoint(originalMesh.vertices[originalMesh.triangles[i]]),
+                    meshFilter.transform.TransformPoint(originalMesh.vertices[originalMesh.triangles[i + 1]]),
+                    meshFilter.transform.TransformPoint(originalMesh.vertices[originalMesh.triangles[i + 2]]));
+            }
+        }
+        
+        navMesh.GenerateLinks();
     }
 
     private void Update()
@@ -112,7 +161,8 @@ public class Test : MonoBehaviour
             DebugExtension.DebugWireSphere(startResult.Value.navPoint.worldPoint, Color.green, 0.01f, 0, true);
 
             var visibleVertices = new NativeList<NavMesh.Link>(Allocator.TempJob);
-            navMesh.GenerateLinks(startResult.Value.navPoint.worldPoint, startResult.Value.navPoint.triangleIndex, ref visibleVertices, Int32.MaxValue);
+            //navMesh.GenerateLinks(startResult.Value.navPoint.worldPoint, startResult.Value.navPoint.triangleIndex, ref visibleVertices, Int32.MaxValue);
+            new NavMesh.GenerateLinksJob(navMesh, startResult.Value.navPoint.worldPoint, startResult.Value.navPoint.triangleIndex, Int32.MaxValue, visibleVertices).Run();
 
             for (int i = 0; i < visibleVertices.Length; i++)
             {
@@ -146,9 +196,9 @@ public class Test : MonoBehaviour
                 var p1 = navMesh.GetPosition(triangle.v1);
                 var p2 = navMesh.GetPosition(triangle.v2);
                 
-                Debug.DrawLine(p0, p1, Color.white, 0, true);
-                Debug.DrawLine(p1, p2, Color.white, 0, true);
-                Debug.DrawLine(p2, p0, Color.white, 0, true);
+                Debug.DrawLine(p0, p1, navMesh.GetEdge(triangle.e0).IsBorder ? Color.blue : new Color(1,1,1,0.05f), 0, true);
+                Debug.DrawLine(p1, p2, navMesh.GetEdge(triangle.e1).IsBorder ? Color.blue : new Color(1,1,1,0.05f), 0, true);
+                Debug.DrawLine(p2, p0, navMesh.GetEdge(triangle.e2).IsBorder ? Color.blue : new Color(1,1,1,0.05f), 0, true);
             }
         }
     }

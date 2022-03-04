@@ -29,7 +29,7 @@ namespace Balma.Navigation
             public int group;
         }
 
-        private struct HalfEdge
+        public struct HalfEdge
         {
             public int t;
 
@@ -71,12 +71,15 @@ namespace Balma.Navigation
 
         private NativeMultiHashMap<int, int> vertexToEdgesOut;
         private NativeMultiHashMap<int, int> vertexToEdgesIn;
+        
+        private int maxLinks;
+        private NativeMultiHashMap<int, Link> vertexLinks;
 
         private GroupingHelper grouping;
 
         public int GetIsland(int group) => grouping.GetIsland(group);
 
-        public NavMesh(Allocator allocator)
+        public NavMesh(Allocator allocator, int maxLinks)
         {
             vertexToIndex = new NativeHashMap<float3, int>(1024, allocator);
             edgeVerticesToIndex = new NativeHashMap<int2, int>(1024, allocator);
@@ -87,6 +90,9 @@ namespace Balma.Navigation
             
             vertexToEdgesOut = new NativeMultiHashMap<int, int>(1024, allocator);
             vertexToEdgesIn = new NativeMultiHashMap<int, int>(1024, allocator);
+            
+            this.maxLinks = maxLinks;
+            vertexLinks = new NativeMultiHashMap<int, Link>(1024, allocator);
 
             grouping = new GroupingHelper(allocator);
         }
@@ -100,6 +106,16 @@ namespace Balma.Navigation
             vertices.Dispose();
             vertexToEdgesOut.Dispose();
             vertexToEdgesIn.Dispose();
+        }
+        
+        //TODO Jobify
+        public void GenerateLinks()
+        {
+            vertexLinks.Clear();
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                GenerateLinks(i, vertexLinks, maxLinks);
+            }
         }
 
         public void AddTriangle(float3 vertex0, float3 vertex1, float3 vertex2)
@@ -195,6 +211,11 @@ namespace Balma.Navigation
         public Triangle GetTriangle(int triangleIndex)
         {
             return triangles[triangleIndex];
+        }
+        
+        public HalfEdge GetEdge(int edgeIndex)
+        {
+            return edges[edgeIndex];
         }
     }
 }
