@@ -73,7 +73,7 @@ namespace Balma.Navigation
         {
             var count = 0;
 
-            var conesOpen = new NativeList<VisibilityCone>(Allocator.Temp);
+            var open = new NativeList<VisibilityCone>(Allocator.Temp);
             var startTriangle = triangles[triangleIndex];
 
             var vertex0 = vertices[startTriangle.v0];
@@ -94,19 +94,13 @@ namespace Balma.Navigation
             var cone1 = new VisibilityCone(position, vertex1, vertex2, e1);
             var cone2 = new VisibilityCone(position, vertex2, vertex0, e2);
 
-            conesOpen.Add(cone0);
-            conesOpen.Add(cone1);
-            conesOpen.Add(cone2);
+            open.Add(cone0);
+            open.Add(cone1);
+            open.Add(cone2);
 
-            ProcessCones(ref conesOpen, ref result, position, count, maxLinks);
-            conesOpen.Clear();
-        }
-        
-        private void ProcessCones(ref NativeList<VisibilityCone> open, ref NativeList<Link> container, float3 pivot, int count, int max)
-        {
             while (open.Length > 0)
             {
-                if (count >= max) return;
+                if (count >= maxLinks) return;
 
                 var cone = open[open.Length - 1];
                 open.RemoveAtSwapBack(open.Length - 1);
@@ -115,19 +109,21 @@ namespace Balma.Navigation
 
                 if (ProcessCone(cone, out var edge, out var candidateIndex, out var candidate, out var visibility))
                 {
-                    container.Add(new Link(candidateIndex, math.distance(pivot.xz, vertices[candidateIndex].xz)));
+                    result.Add(new Link(candidateIndex, math.distance(position.xz, vertices[candidateIndex].xz)));
                     count++;
                 }
 
                 PostprocessCone(ref open, cone, visibility, candidate, edge);
             }
+
+            open.Clear();
         }
         
         private void GenerateLinks(int vertexIndex, NativeMultiHashMap<int, Link> container, int maxLinks)
         {
             var count = 0;
             
-            var conesOpen = new NativeList<VisibilityCone>(Allocator.Temp);
+            var open = new NativeList<VisibilityCone>(Allocator.Temp);
             var pivot = vertices[vertexIndex];
 
             var inEdges = vertexToEdgesIn.GetValuesForKey(vertexIndex);
@@ -155,18 +151,12 @@ namespace Balma.Navigation
 
                 var edge = edges[outEdge.eNext];
                 var cone = new VisibilityCone(pivot, vertices[outEdge.v1], vertices[edge.v1], edge);
-                conesOpen.Add(cone);
+                open.Add(cone);
             }
-
-            ProcessCones(ref conesOpen, ref container, pivot, vertexIndex, count, maxLinks);
-            conesOpen.Clear();
-        }
-        
-        private void ProcessCones(ref NativeList<VisibilityCone> open, ref NativeMultiHashMap<int, Link> container, float3 pivot, int vertexIndex, int count, int max)
-        {
+            
             while (open.Length > 0)
             {
-                if(count >= max) return;
+                if(count >= maxLinks) return;
                 
                 var cone = open[open.Length - 1];
                 open.RemoveAtSwapBack(open.Length - 1);
@@ -181,6 +171,8 @@ namespace Balma.Navigation
 
                 PostprocessCone(ref open, cone, visibility, candidate, edge);
             }
+            
+            open.Clear();
         }
 
         private bool ProcessCone(VisibilityCone cone, out HalfEdge edge, out int candidateIndex, out float3 candidate, out PortalTest visibility)

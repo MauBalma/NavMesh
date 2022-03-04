@@ -27,6 +27,7 @@ public class Test : MonoBehaviour
     public bool drawIslands = true;
     public bool drawAStar = true;
     public bool drawStartVisibleVertices = true;
+    public bool drawRawFlowField = true;
     
     public NavMesh navMesh;
 
@@ -93,6 +94,7 @@ public class Test : MonoBehaviour
     {
         if(drawAStar) DoAStarPath();
         if(drawStartVisibleVertices) DrawStartVisibility();
+        if(drawRawFlowField) DrawRawFlowField();
     }
 
     private void DoAStarPath()
@@ -170,6 +172,42 @@ public class Test : MonoBehaviour
             }
 
             visibleVertices.Dispose();
+        }
+        else
+        {
+            Debug.DrawLine(startHandle.position, startHandle.position + Vector3.down * 1000, Color.red, 0, true);
+        }
+    }
+    
+    private void DrawRawFlowField()
+    {
+        using var startResult = new NativeReference<NavMesh.RayCastResult>(Allocator.TempJob);
+
+        var startJobHandle = new NavMesh.RayCastJob(navMesh, startHandle.position, Vector3.down, startResult).Schedule();
+        startJobHandle.Complete();
+
+        if (startResult.Value.hit)
+        {
+            Debug.DrawLine(startResult.Value.navPoint.worldPoint, startHandle.position, Color.green, 0, true);
+            DebugExtension.DebugWireSphere(startResult.Value.navPoint.worldPoint, Color.green, 0.01f, 0, true);
+
+            var field = new NativeArray<NavMesh.FlowFieldNode>(navMesh.VertexCount, Allocator.TempJob);
+
+            navMesh.GetParentField(startResult.Value.navPoint.triangleIndex, startResult.Value.navPoint.worldPoint, field);
+
+            for (int i = 0; i < field.Length; i++)
+            {
+                var node = field[i];
+                
+                if(!node.valid) continue;
+                
+                var p0 = navMesh.GetPosition(i);
+                var p1 = node.vParent < navMesh.VertexCount ? navMesh.GetPosition(node.vParent) : startResult.Value.navPoint.worldPoint;
+                
+                Debug.DrawLine(p0 + drawOffset, p1 + drawOffset, Color.red, 0, true);
+            }
+
+            field.Dispose();
         }
         else
         {

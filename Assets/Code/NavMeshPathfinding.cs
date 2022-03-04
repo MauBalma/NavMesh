@@ -16,8 +16,8 @@ namespace Balma.Navigation
             public NavigationPoint start;
             public NavigationPoint end;
 
-            //Reversed vertex path, start/end NOT included
             [WriteOnly] public NativeReference<bool> pathFound;
+            //Reversed vertex path, start/end NOT included
             [WriteOnly] public NativeList<int> path;
 
             public AStarJob(NavMesh navMesh, NavigationPoint start, NavigationPoint end, NativeReference<bool> pathFound, NativeList<int> path)
@@ -86,6 +86,71 @@ namespace Balma.Navigation
 
                 pathFound.Value = false;
             }
+        }
+        
+        public struct FlowFieldNode
+        {
+            public bool valid;
+            public int vParent;
+            public float distanceToTarget;
+
+            public FlowFieldNode(int vParent, float distanceToTarget)
+            {
+                this.valid = true;
+                this.vParent = vParent;
+                this.distanceToTarget = distanceToTarget;
+            }
+        }
+        
+        public NativeArray<FlowFieldNode> GetParentField(int startTriangleIndex, float3 start, NativeArray<FlowFieldNode> field)
+        {
+            var open = new DecreseableMinHeap<int>(Allocator.Temp);
+            var closed = new NativeHashSet<int>(1024, Allocator.Temp);
+            var costs = new NativeHashMap<int, float>(1024, Allocator.Temp);
+            var initials = new NativeList<Link>(Allocator.Temp);
+
+            GenerateLinks(start, startTriangleIndex, ref initials, maxLinks);
+
+            for (int i = 0; i < initials.Length; i++)
+            {
+                var v = initials[i];
+                open.Push(v.vNeighbour, v.distance);
+                costs[v.vNeighbour] = v.distance;
+                field[v.vNeighbour] = new FlowFieldNode(VertexCount, v.distance);
+            }
+            
+            while (open.Count > 0)
+            {
+                var currentIndex = open.Pop();
+
+                closed.Add(currentIndex);
+
+                var currentCost = costs[currentIndex];
+
+                var neighbours = GetLinks(currentIndex);
+                while (neighbours.MoveNext())
+                {
+                    var neighbour = neighbours.Current;
+
+                    if (closed.Contains(neighbour.vNeighbour)) continue;
+
+                    var tentativeCost = currentCost + neighbour.distance;
+
+                    if (costs.TryGetValue(neighbour.vNeighbour, out var previousCost) &&
+                        tentativeCost > previousCost) continue;
+
+                    costs[neighbour.vNeighbour] = tentativeCost;
+                    open.Push(neighbour.vNeighbour, tentativeCost);
+                    field[neighbour.vNeighbour] = new FlowFieldNode(currentIndex, tentativeCost);
+                }
+            }
+
+            open.Dispose();
+            closed.Dispose();
+            costs.Dispose();
+            initials.Dispose();
+
+            return field;
         }
     }
 }
