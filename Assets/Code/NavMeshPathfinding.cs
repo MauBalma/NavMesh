@@ -175,7 +175,7 @@ namespace Balma.Navigation
             return field;
         }
 
-        public float3 SampleFieldDirection(NativeArray<FlowFieldNode> field, NavigationPoint point)
+        public float3 SampleFieldDirection(NativeArray<FlowFieldNode> field, NavigationPoint point, NavigationPoint target)
         {
             var visibles = new NativeList<Link>(Allocator.Temp);
             GenerateLinks(point.worldPoint, point.triangleIndex, ref visibles, maxLinks);
@@ -194,8 +194,12 @@ namespace Balma.Navigation
                     minDist = dist;
                 }
             }
-
             visibles.Dispose();
+
+            if (field[min.vNeighbour].vParent == field.Length && PointPointVisibilityIntersection(point.triangleIndex, point.worldPoint, target.worldPoint))
+            {
+                return  math.normalize(target.worldPoint - point.worldPoint);
+            }
 
             return math.normalize(GetPosition(min.vNeighbour) - point.worldPoint);
         }
@@ -205,20 +209,22 @@ namespace Balma.Navigation
         {
             [ReadOnly] private NavMesh navMesh;
             [ReadOnly] private NativeArray<FlowFieldNode> field;
+            [ReadOnly] private NavigationPoint target;
             [ReadOnly] private NativeArray<NavigationPoint> points;
             [WriteOnly] private NativeArray<float3> results;
 
-            public SampleFieldDirectionJob(NavMesh navMesh, NativeArray<FlowFieldNode> field, NativeArray<NavigationPoint> points, NativeArray<float3> results)
+            public SampleFieldDirectionJob(NavMesh navMesh, NativeArray<FlowFieldNode> field, NavigationPoint target, NativeArray<NavigationPoint> points, NativeArray<float3> results)
             {
                 this.navMesh = navMesh;
                 this.field = field;
+                this.target = target;
                 this.points = points;
                 this.results = results;
             }
 
             public void Execute(int index)
             {
-                results[index] = navMesh.SampleFieldDirection(field, points[index]);
+                results[index] = navMesh.SampleFieldDirection(field, points[index], target);
             }
         }
         

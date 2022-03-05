@@ -26,6 +26,7 @@ public class Test : MonoBehaviour
     public bool drawEdges = true;
     public bool drawBorders = true;
     public bool drawIslands = true;
+    public bool drawStartEndVisibility = true;
     public bool drawAStar = true;
     public bool drawStartVisibleVertices = true;
     public bool calculateFlowField = true;
@@ -135,6 +136,7 @@ public class Test : MonoBehaviour
 
     private void Update()
     {
+        if(drawStartEndVisibility) DoStarEndVisibility();
         if(drawAStar) DoAStarPath();
         if(drawStartVisibleVertices) DrawStartVisibility();
         if(calculateFlowField) CalcuFlowField();
@@ -190,6 +192,43 @@ public class Test : MonoBehaviour
                     Debug.DrawLine(endResult.Value.navPoint.worldPoint + drawOffset,startResult.Value.navPoint.worldPoint + drawOffset, Color.blue, 0, false);
                 }
             }
+        }
+    }
+    
+    private void DoStarEndVisibility()
+    {
+        using var startResult = new NativeReference<NavMesh.RayCastResult>(Allocator.TempJob);
+        using var endResult = new NativeReference<NavMesh.RayCastResult>(Allocator.TempJob);
+
+        var startJobHandle = new NavMesh.RayCastJob(navMesh, startHandle.position, Vector3.down, startResult).Schedule();
+        var endJobHandle = new NavMesh.RayCastJob(navMesh, endHandle.position, Vector3.down, endResult).Schedule();
+
+        JobHandle.CombineDependencies(startJobHandle, endJobHandle).Complete();
+
+        if (startResult.Value.hit)
+        {
+            Debug.DrawLine(startResult.Value.navPoint.worldPoint, startHandle.position, Color.green, 0, true);
+            DebugExtension.DebugWireSphere(startResult.Value.navPoint.worldPoint, Color.green, 0.01f, 0, true);
+        }
+        else
+        {
+            Debug.DrawLine(startHandle.position, startHandle.position + Vector3.down * 1000, Color.red, 0, true);
+        }
+
+        if (endResult.Value.hit)
+        {
+            Debug.DrawLine(endResult.Value.navPoint.worldPoint, endHandle.position, Color.green, 0, true);
+            DebugExtension.DebugWireSphere(endResult.Value.navPoint.worldPoint, Color.green, 0.01f, 0, true);
+        }
+        else
+        {
+            Debug.DrawLine(endHandle.position, endHandle.position + Vector3.down * 1000, Color.red, 0, true);
+        }
+
+        if (startResult.Value.hit && endResult.Value.hit)
+        {
+            var visibles = navMesh.PointPointVisibilityIntersection(startResult.Value.navPoint.triangleIndex, startResult.Value.navPoint.worldPoint, endResult.Value.navPoint.worldPoint);
+            Debug.DrawLine(endResult.Value.navPoint.worldPoint + drawOffset, startResult.Value.navPoint.worldPoint + drawOffset, visibles ? Color.green : Color.red, 0, true);
         }
     }
     
@@ -255,13 +294,13 @@ public class Test : MonoBehaviour
             if (drawFlowFieldGridDirectionNew)
             {
                 var directions = new NativeArray<float3>(gridNavPointsReal.Length, Allocator.TempJob);
-                new NavMesh.SampleFieldDirectionJob(navMesh, field, gridNavPointsReal, directions)
+                new NavMesh.SampleFieldDirectionJob(navMesh, field, startResult.Value.navPoint, gridNavPointsReal, directions)
                     .ScheduleParallel(gridNavPointsReal.Length, 16, default).Complete();
 
-                for (int i = 0; i < gridNavPointsReal.Length; i++)
-                {
-                    DebugExtension.DebugArrow(gridNavPointsReal[i].worldPoint + drawOffset,  directions[i] * directionLenght, Color.red, 0, true);
-                }
+                //for (int i = 0; i < gridNavPointsReal.Length; i++)
+                //{
+                //    DebugExtension.DebugArrow(gridNavPointsReal[i].worldPoint + drawOffset,  directions[i] * directionLenght, Color.red, 0, true);
+                //}
 
                 directions.Dispose();
             }
@@ -310,7 +349,7 @@ public class Test : MonoBehaviour
                     Debug.DrawLine(endResult.Value.navPoint.worldPoint, endHandle.position, Color.green, 0, true);
                     DebugExtension.DebugWireSphere(endResult.Value.navPoint.worldPoint, Color.green, 0.01f, 0, true);
 
-                    var dir = navMesh.SampleFieldDirection(field, endResult.Value.navPoint);
+                    var dir = navMesh.SampleFieldDirection(field, endResult.Value.navPoint, startResult.Value.navPoint);
                     DebugExtension.DebugArrow(endResult.Value.navPoint.worldPoint + drawOffset, dir /** directionLenght * 3*/, Color.red, 0, true);
                 }
                 else

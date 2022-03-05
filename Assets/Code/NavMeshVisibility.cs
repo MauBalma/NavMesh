@@ -1,4 +1,6 @@
-﻿using Unity.Burst;
+﻿using System;
+using Balma.Math;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -232,6 +234,43 @@ namespace Balma.Navigation
             }
 
             return PortalTest.Right;
+        }
+        
+        public bool PointPointVisibilityIntersection(int startTriangleIndex, float3 start, float3 end)
+        {
+            var startTriangle = triangles[startTriangleIndex];
+        
+            var e0 = edges[startTriangle.e0];
+            var e1 = edges[startTriangle.e1];
+            var e2 = edges[startTriangle.e2];
+        
+            HalfEdge currentEdge;
+
+            if (Intersection.SegmentSegmentFull(start.xz, end.xz, vertices[e0.v0].xz, vertices[e0.v1].xz))
+                currentEdge = e0;
+            else if (Intersection.SegmentSegmentFull(start.xz, end.xz, vertices[e1.v0].xz, vertices[e1.v1].xz))
+                currentEdge = e1;
+            else if (Intersection.SegmentSegmentFull(start.xz, end.xz, vertices[e2.v0].xz, vertices[e2.v1].xz))
+                currentEdge = e2;
+            else
+                return true;
+        
+            while (!currentEdge.IsBorder)
+            {
+                var adjacent = edges[currentEdge.eAdjacent];
+                
+                var eA = edges[adjacent.eNext];
+                var eB = edges[adjacent.ePrevious];
+
+                if (Intersection.SegmentSegmentFull(start.xz, end.xz, vertices[eA.v0].xz, vertices[eA.v1].xz))
+                    currentEdge = eA;
+                else if (Intersection.SegmentSegmentFull(start.xz, end.xz, vertices[eB.v0].xz, vertices[eB.v1].xz))
+                    currentEdge = eB;
+                else
+                    return true;
+            }
+        
+            return false;
         }
     }
 }
