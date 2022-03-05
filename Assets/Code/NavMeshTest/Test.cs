@@ -33,6 +33,7 @@ public class Test : MonoBehaviour
     public bool drawFlowFieldGridDirection = true;
     public int gridTestSize = 256;
     public bool flowSampleEndPoint = true;
+    public int sampleMaxLinks = 256;
 
     public float directionLenght = 0.01f;
     
@@ -230,19 +231,19 @@ public class Test : MonoBehaviour
                     var p0 = navMesh.GetPosition(i);
                     var p1 = node.vParent < navMesh.VertexCount ? navMesh.GetPosition(node.vParent) : startResult.Value.navPoint.worldPoint;
                 
-                    DebugExtension.DebugArrow(p0 + drawOffset, math.normalize(p1-p0) * directionLenght, Color.red, 0, true);
+                    DebugExtension.DebugArrow(p0 + drawOffset, math.normalize(p1-p0) * directionLenght, new Color(1,1,0,0.5f), 0, true);
                 }
             }
             
             if (drawFlowFieldGridDirection)
             {
                 var directions = new NativeArray<float3>(gridNavPointsReal.Length, Allocator.TempJob);
-                new NavMesh.SampleFieldDirectionJob(navMesh, field, startResult.Value.navPoint, gridNavPointsReal, directions)
+                new NavMesh.SampleFieldDirectionJob(navMesh, field, startResult.Value.navPoint, gridNavPointsReal, directions, sampleMaxLinks)
                     .ScheduleParallel(gridNavPointsReal.Length, 16, default).Complete();
 
                 for (int i = 0; i < gridNavPointsReal.Length; i++)
                 {
-                    DebugExtension.DebugArrow(gridNavPointsReal[i].worldPoint + drawOffset,  directions[i] * directionLenght, Color.red, 0, true);
+                    DebugExtension.DebugArrow(gridNavPointsReal[i].worldPoint + drawOffset,  directions[i] * directionLenght, new Color(1,1,0,0.5f), 0, true);
                 }
 
                 directions.Dispose();
@@ -258,8 +259,8 @@ public class Test : MonoBehaviour
                     Debug.DrawLine(endResult.Value.navPoint.worldPoint, endHandle.position, Color.green, 0, true);
                     DebugExtension.DebugWireSphere(endResult.Value.navPoint.worldPoint, Color.green, 0.01f, 0, true);
 
-                    var dir = navMesh.SampleFieldDirection(field, endResult.Value.navPoint, startResult.Value.navPoint);
-                    DebugExtension.DebugArrow(endResult.Value.navPoint.worldPoint + drawOffset, dir /** directionLenght * 3*/, Color.red, 0, true);
+                    var dir = navMesh.SampleFieldDirection(field, endResult.Value.navPoint, startResult.Value.navPoint, sampleMaxLinks);
+                    DebugExtension.DebugArrow(endResult.Value.navPoint.worldPoint + drawOffset, dir * directionLenght * 3, Color.red, 0, true);
                 }
                 else
                 {

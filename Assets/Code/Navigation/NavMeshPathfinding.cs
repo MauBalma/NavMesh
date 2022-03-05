@@ -95,7 +95,7 @@ namespace Balma.Navigation
             return field;
         }
 
-        public float3 SampleFieldDirection(NativeArray<FlowFieldNode> field, NavPoint point, NavPoint target)
+        public float3 SampleFieldDirection(NativeArray<FlowFieldNode> field, NavPoint point, NavPoint target, int maxLinks)
         {
             var visibles = new NativeList<Link>(Allocator.Temp);
             GenerateLinks(point.worldPoint, point.triangleIndex, ref visibles, maxLinks);
@@ -131,20 +131,22 @@ namespace Balma.Navigation
             [ReadOnly] private NativeArray<FlowFieldNode> field;
             [ReadOnly] private NavPoint target;
             [ReadOnly] private NativeArray<NavPoint> points;
+            [ReadOnly] private int maxLinks;
             [WriteOnly] private NativeArray<float3> results;
 
-            public SampleFieldDirectionJob(NavMesh navMesh, NativeArray<FlowFieldNode> field, NavPoint target, NativeArray<NavPoint> points, NativeArray<float3> results)
+            public SampleFieldDirectionJob(NavMesh navMesh, NativeArray<FlowFieldNode> field, NavPoint target, NativeArray<NavPoint> points, NativeArray<float3> results, int maxLinks)
             {
                 this.navMesh = navMesh;
                 this.field = field;
                 this.target = target;
                 this.points = points;
                 this.results = results;
+                this.maxLinks = maxLinks;
             }
 
             public void Execute(int index)
             {
-                results[index] = navMesh.SampleFieldDirection(field, points[index], target);
+                results[index] = navMesh.SampleFieldDirection(field, points[index], target, maxLinks);
             }
         }
         
