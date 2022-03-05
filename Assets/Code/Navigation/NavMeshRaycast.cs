@@ -11,7 +11,7 @@ namespace Balma.Navigation
         public struct RayCastResult
         {
             public bool hit;
-            public NavigationPoint navPoint;
+            public NavPoint navPoint;
         }
         
         [BurstCompile]
@@ -37,7 +37,7 @@ namespace Balma.Navigation
                 result.Value = new RayCastResult()
                 {
                     hit = false,
-                    navPoint = new NavigationPoint() {triangleIndex = -1, barycentricCoordinates = -1}
+                    navPoint = InvalidNavPoint
                 };
 
                 for (int i = 0; i < navMesh.triangles.Length; i++)
@@ -48,24 +48,22 @@ namespace Balma.Navigation
                     var v1 = navMesh.vertices[navMesh.edges[triangle.e1].v0];
                     var v2 = navMesh.vertices[navMesh.edges[triangle.e2].v0];
 
-                    if (Intersection.RayTriangle(origin, direction, v0, v1, v2, out var baryCoordinates, out var hit))
+                    if (!Intersection.RayTriangle(origin, direction, v0, v1, v2, out var baryCoordinates, out var hit))
+                        continue;
+                    
+                    var currentDist = math.distancesq(hit, origin);
+                    if (!(currentDist < minDist)) continue;
+                    
+                    minDist = currentDist;
+                    result.Value = new RayCastResult()
                     {
-                        var currentDist = math.distancesq(hit, origin);
-                        if (currentDist < minDist)
+                        hit = true,
+                        navPoint = new NavPoint() 
                         {
-                            minDist = currentDist;
-                            result.Value = new RayCastResult()
-                            {
-                                hit = true,
-                                navPoint = new NavigationPoint() 
-                                {
-                                    triangleIndex = i,
-                                    barycentricCoordinates = baryCoordinates,
-                                    worldPoint = hit,
-                                }
-                            };
+                            triangleIndex = i,
+                            worldPoint = hit,
                         }
-                    }
+                    };
                 }
             }
         }
@@ -74,7 +72,7 @@ namespace Balma.Navigation
         public struct MultiRayCastJob : IJobFor
         {
             [ReadOnly] private NavMesh navMesh;
-            [ReadOnly]private NativeArray<float3> origins;
+            [ReadOnly] private NativeArray<float3> origins;
             private float3 direction;
             
             [WriteOnly] public NativeArray<RayCastResult> results;
@@ -93,7 +91,7 @@ namespace Balma.Navigation
                 var result = new RayCastResult()
                 {
                     hit = false,
-                    navPoint = new NavigationPoint() {triangleIndex = -1, barycentricCoordinates = -1}
+                    navPoint = InvalidNavPoint
                 };
 
                 var origin = origins[index];
@@ -106,26 +104,24 @@ namespace Balma.Navigation
                     var v1 = navMesh.vertices[navMesh.edges[triangle.e1].v0];
                     var v2 = navMesh.vertices[navMesh.edges[triangle.e2].v0];
 
-                    if (Intersection.RayTriangle(origin, direction, v0, v1, v2, out var baryCoordinates, out var hit))
+                    if (!Intersection.RayTriangle(origin, direction, v0, v1, v2, out var baryCoordinates, out var hit))
+                        continue;
+                    
+                    var currentDist = math.distancesq(hit, origin);
+                    if (!(currentDist < minDist)) continue;
+                    
+                    minDist = currentDist;
+                    result = new RayCastResult()
                     {
-                        var currentDist = math.distancesq(hit, origin);
-                        if (currentDist < minDist)
+                        hit = true,
+                        navPoint = new NavPoint() 
                         {
-                            minDist = currentDist;
-                            result = new RayCastResult()
-                            {
-                                hit = true,
-                                navPoint = new NavigationPoint() 
-                                {
-                                    triangleIndex = i,
-                                    barycentricCoordinates = baryCoordinates,
-                                    worldPoint = hit,
-                                }
-                            };
+                            triangleIndex = i,
+                            worldPoint = hit,
                         }
-                    }
+                    };
                 }
-
+                
                 results[index] = result;
             }
         }

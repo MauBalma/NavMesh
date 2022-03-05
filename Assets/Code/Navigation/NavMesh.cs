@@ -1,5 +1,5 @@
-using System.Collections;
-using System.Collections.Generic;
+using System;
+using Balma.ADT;
 using Unity.Collections;
 using Unity.Mathematics;
 
@@ -9,10 +9,9 @@ namespace Balma.Navigation
     {
         private const int None = -1;
 
-        public struct NavigationPoint
+        public struct NavPoint
         {
             public int triangleIndex;
-            public float3 barycentricCoordinates;
             public float3 worldPoint;
         }
 
@@ -61,6 +60,7 @@ namespace Balma.Navigation
 
         private static readonly Triangle InvalidTriangle = new Triangle() {e0 = None, e1 = None, e2 = None, v0 = None, v1 = None, v2 = None};
         private static readonly HalfEdge InvalidEdge = new HalfEdge() {eAdjacent = None, eNext = None, ePrevious = None, t = None, v0 = None, v1 = None};
+        private static readonly NavPoint InvalidNavPoint = new NavPoint() {triangleIndex = None};
         
         private NativeHashMap<float3, int> vertexToIndex;
         private NativeHashMap<int2, int> edgeVerticesToIndex;
@@ -79,7 +79,7 @@ namespace Balma.Navigation
 
         public int GetIsland(int group) => grouping.GetIsland(group);
 
-        public NavMesh(Allocator allocator, int maxLinks)
+        public NavMesh(Allocator allocator, int maxLinks = Int32.MaxValue)
         {
             vertexToIndex = new NativeHashMap<float3, int>(1024, allocator);
             edgeVerticesToIndex = new NativeHashMap<int2, int>(1024, allocator);

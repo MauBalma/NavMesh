@@ -27,12 +27,10 @@ public class Test : MonoBehaviour
     public bool drawBorders = true;
     public bool drawIslands = true;
     public bool drawStartEndVisibility = true;
-    public bool drawAStar = true;
     public bool drawStartVisibleVertices = true;
     public bool calculateFlowField = true;
     public bool drawFlowFieldVertexDirection = true;
-    public bool drawFlowFieldGridDirectionBarycentric = true;
-    public bool drawFlowFieldGridDirectionNew = true;
+    public bool drawFlowFieldGridDirection = true;
     public int gridTestSize = 256;
     public bool flowSampleEndPoint = true;
 
@@ -44,7 +42,7 @@ public class Test : MonoBehaviour
     
     private NativeArray<float3> gridPoints;
     private NativeArray<NavMesh.RayCastResult> gridNavPoints;
-    private NativeList<NavMesh.NavigationPoint> gridNavPointsReal;
+    private NativeList<NavMesh.NavPoint> gridNavPointsReal;
 
     private void Start()
     {
@@ -106,7 +104,7 @@ public class Test : MonoBehaviour
         
         gridPoints = new NativeArray<float3>(gridTestSize * gridTestSize, Allocator.Persistent);
         gridNavPoints = new NativeArray<NavMesh.RayCastResult>(gridTestSize * gridTestSize, Allocator.Persistent);
-        gridNavPointsReal = new NativeList<NavMesh.NavigationPoint>(gridTestSize * gridTestSize, Allocator.Persistent);
+        gridNavPointsReal = new NativeList<NavMesh.NavPoint>(gridTestSize * gridTestSize, Allocator.Persistent);
         for (int j = 0; j < gridTestSize; j++)
         {
             for (int i = 0; i < gridTestSize; i++)
@@ -137,62 +135,8 @@ public class Test : MonoBehaviour
     private void Update()
     {
         if(drawStartEndVisibility) DoStarEndVisibility();
-        if(drawAStar) DoAStarPath();
         if(drawStartVisibleVertices) DrawStartVisibility();
-        if(calculateFlowField) CalcuFlowField();
-    }
-
-    private void DoAStarPath()
-    {
-        using var startResult = new NativeReference<NavMesh.RayCastResult>(Allocator.TempJob);
-        using var endResult = new NativeReference<NavMesh.RayCastResult>(Allocator.TempJob);
-
-        var startJobHandle = new NavMesh.RayCastJob(navMesh, startHandle.position, Vector3.down, startResult).Schedule();
-        var endJobHandle = new NavMesh.RayCastJob(navMesh, endHandle.position, Vector3.down, endResult).Schedule();
-
-        JobHandle.CombineDependencies(startJobHandle, endJobHandle).Complete();
-
-        if (startResult.Value.hit)
-        {
-            Debug.DrawLine(startResult.Value.navPoint.worldPoint, startHandle.position, Color.green, 0, true);
-            DebugExtension.DebugWireSphere(startResult.Value.navPoint.worldPoint, Color.green, 0.01f, 0, true);
-        }
-        else
-        {
-            Debug.DrawLine(startHandle.position, startHandle.position + Vector3.down * 1000, Color.red, 0, true);
-        }
-
-        if (endResult.Value.hit)
-        {
-            Debug.DrawLine(endResult.Value.navPoint.worldPoint, endHandle.position, Color.green, 0, true);
-            DebugExtension.DebugWireSphere(endResult.Value.navPoint.worldPoint, Color.green, 0.01f, 0, true);
-        }
-        else
-        {
-            Debug.DrawLine(endHandle.position, endHandle.position + Vector3.down * 1000, Color.red, 0, true);
-        }
-
-        if (startResult.Value.hit && endResult.Value.hit)
-        {
-            using var pathResult = new NativeReference<bool>(Allocator.TempJob);
-            using var path = new NativeList<int>(Allocator.TempJob);
-            new NavMesh.AStarJob(navMesh, startResult.Value.navPoint, endResult.Value.navPoint, pathResult, path).Run();
-
-            if (pathResult.Value)
-            {
-                if (path.Length > 0)
-                {
-                    Debug.DrawLine(navMesh.GetPosition(path[0]) + drawOffset,endResult.Value.navPoint.worldPoint + drawOffset, Color.blue, 0, false);
-                    for (int i = 0; i < path.Length - 1; i++)
-                        Debug.DrawLine(navMesh.GetPosition(path[i]) + drawOffset,navMesh.GetPosition(path[i + 1]) + drawOffset, Color.blue, 0, false);
-                    Debug.DrawLine(navMesh.GetPosition(path[path.Length - 1]) + drawOffset,startResult.Value.navPoint.worldPoint + drawOffset, Color.blue, 0, false);
-                }
-                else
-                {
-                    Debug.DrawLine(endResult.Value.navPoint.worldPoint + drawOffset,startResult.Value.navPoint.worldPoint + drawOffset, Color.blue, 0, false);
-                }
-            }
-        }
+        if(calculateFlowField) CalcFlowField();
     }
     
     private void DoStarEndVisibility()
@@ -260,7 +204,7 @@ public class Test : MonoBehaviour
         }
     }
     
-    private void CalcuFlowField()
+    private void CalcFlowField()
     {
         using var startResult = new NativeReference<NavMesh.RayCastResult>(Allocator.TempJob);
 
@@ -286,57 +230,22 @@ public class Test : MonoBehaviour
                     var p0 = navMesh.GetPosition(i);
                     var p1 = node.vParent < navMesh.VertexCount ? navMesh.GetPosition(node.vParent) : startResult.Value.navPoint.worldPoint;
                 
-                    //Debug.DrawLine(p0 + drawOffset, p0 + math.normalize(p1-p0) * directionLenght + drawOffset, Color.red, 0, true);
                     DebugExtension.DebugArrow(p0 + drawOffset, math.normalize(p1-p0) * directionLenght, Color.red, 0, true);
                 }
             }
             
-            if (drawFlowFieldGridDirectionNew)
+            if (drawFlowFieldGridDirection)
             {
                 var directions = new NativeArray<float3>(gridNavPointsReal.Length, Allocator.TempJob);
                 new NavMesh.SampleFieldDirectionJob(navMesh, field, startResult.Value.navPoint, gridNavPointsReal, directions)
                     .ScheduleParallel(gridNavPointsReal.Length, 16, default).Complete();
 
-                //for (int i = 0; i < gridNavPointsReal.Length; i++)
-                //{
-                //    DebugExtension.DebugArrow(gridNavPointsReal[i].worldPoint + drawOffset,  directions[i] * directionLenght, Color.red, 0, true);
-                //}
+                for (int i = 0; i < gridNavPointsReal.Length; i++)
+                {
+                    DebugExtension.DebugArrow(gridNavPointsReal[i].worldPoint + drawOffset,  directions[i] * directionLenght, Color.red, 0, true);
+                }
 
                 directions.Dispose();
-            }
-
-            if (drawFlowFieldGridDirectionBarycentric)
-            {
-                for (int k = 0; k < gridPoints.Length; k++)
-                {
-                    var result = gridNavPoints[k];
-
-                    if (result.hit)
-                    {
-                        //DebugExtension.DebugPoint(result.navPoint.worldPoint, Color.blue, 0.0075f, 0f);
-                        var triangle = navMesh.GetTriangle(result.navPoint.triangleIndex);
-
-                        float3 GetDir(int vertexIndex)
-                        {
-                            var n = field[vertexIndex];
-                            var p = navMesh.GetPosition(vertexIndex);
-                            var pp = n.vParent < navMesh.VertexCount ? navMesh.GetPosition(n.vParent) : startResult.Value.navPoint.worldPoint;
-                            var d = math.normalize(pp - p);
-                            return d;
-                        }
-
-                        var d0 = GetDir(triangle.v0);
-                        var d1 = GetDir(triangle.v1);
-                        var d2 = GetDir(triangle.v2);
-
-                        var dir = (d0 * result.navPoint.barycentricCoordinates[0]
-                                   + d1 * result.navPoint.barycentricCoordinates[1]
-                                   + d2 * result.navPoint.barycentricCoordinates[2]);
-
-
-                        DebugExtension.DebugArrow(result.navPoint.worldPoint + drawOffset, math.normalize(dir) * directionLenght, Color.red, 0, true);
-                    }
-                }
             }
 
             if (flowSampleEndPoint)

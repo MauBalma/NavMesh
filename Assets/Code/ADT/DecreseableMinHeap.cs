@@ -5,313 +5,149 @@ using Unity.Mathematics;
 
 namespace Balma.ADT
 {
-	public class DecreseableMinHeapManaged<T>
+	public struct MinHeap<T> : IDisposable where T : unmanaged, IEquatable<T>
 	{
-		List<T> _items;
-		List<float> _values;
-		Dictionary<T, int> _map;
+		private NativeList<T> items;
+		private NativeList<float> values;
+		private NativeHashMap<T, int> map;
+		
+		public int Count => items.Length;
+		public T Peek() => items[0];
 
-		public DecreseableMinHeapManaged()
+		public MinHeap(Allocator allocator)
 		{
-			_items = new List<T>();
-			_values = new List<float>();
-			_map = new Dictionary<T, int>();
+			items = new NativeList<T>(allocator);
+			values = new NativeList<float>(allocator);
+			map = new NativeHashMap<T, int>(1024, allocator);
 		}
-
-		void Swap(int i, int j)
-		{
-
-			var tt = _items[i];
-			_items[i] = _items[j];
-			_items[j] = tt;
-
-			var tv = _values[i];
-			_values[i] = _values[j];
-			_values[j] = tv;
-
-			_map[_items[i]] = i;
-			_map[_items[j]] = j;
-
-		}
-
-		public int Count => _items.Count;
-
-		// Returns true if it found the item.
-		bool DecreaseKey(T item, float newValue)
-		{
-			if (!_map.TryGetValue(item, out var current))
-				return false;
-
-			var oldValue = _values[current];
-			if (oldValue > newValue)
-			{
-				_values[current] = newValue;
-
-				// Bubble up
-				while (current != 0)
-				{
-					var parent = (current - 1) / 2; //Integer division (round down)
-					if (newValue < _values[parent])
-					{
-						Swap(current, parent);
-						current = parent;
-					}
-					else
-						break;
-				}
-			}
-
-			return true;
-		}
-
-		public void Push(T item, float value)
-		{
-			// If the item already existed, update and exit
-			if (DecreaseKey(item, value))
-				return;
-
-			// Add last (a leaf)
-			_items.Add(item);
-			_values.Add(value);
-
-			var current = Count - 1;
-			_map[item] = current;
-
-			// Keep climbing to top until parent or unable to improve heap
-			while (current != 0)
-			{
-				var parent = (current - 1) / 2; //Integer division (round down)
-				if (value < _values[parent])
-				{
-					Swap(current, parent);
-					current = parent;
-				}
-				else
-					break;
-			}
-		}
-
-		public T Peek()
-		{
-			return _items[0];
-		}
-
-		public T Pop(out float value)
-		{
-			var result = _items[0];
-			value = _values[0];
-
-			//Remove first, swap with last and decrease count
-			_items[0] = _items[Count - 1];
-			_values[0] = _values[Count - 1];
-			_values.RemoveAt(Count - 1);
-			_items.RemoveAt(Count - 1);
-
-			if (Count > 0)
-			{
-				_map[_items[0]] = 0;
-
-				// Trickle first down
-				int current = 0;
-				while (current < Count)
-				{
-					int child0 = current * 2 + 1;
-					int child1 = current * 2 + 2;
-					int best = current;
-					if (child0 < Count && _values[child0] < _values[best])
-						best = child0;
-					if (child1 < Count && _values[child1] < _values[best])
-						best = child1;
-
-					if (best == current)
-						break; // Can't improve
-					else
-					{
-						Swap(current, best);
-						current = best; // Go down that way
-					}
-				}
-			}
-
-			_map.Remove(result);
-			return result;
-		}
-
-		public T Pop()
-		{
-			return Pop(out var v);
-		}
-	}
-	
-	public struct DecreseableMinHeap<T> : IDisposable where T : unmanaged, IEquatable<T>
-	{
-		NativeList<T> _items;
-		NativeList<float> _values;
-		NativeHashMap<T, int> _map;
-
-		public DecreseableMinHeap(Allocator allocator)
-		{
-			_items = new NativeList<T>(allocator);
-			_values = new NativeList<float>(allocator);
-			_map = new NativeHashMap<T, int>(1024, allocator);
-		}
-
-		void Swap(int i, int j)
-		{
-
-			var tt = _items[i];
-			_items[i] = _items[j];
-			_items[j] = tt;
-
-			var tv = _values[i];
-			_values[i] = _values[j];
-			_values[j] = tv;
-
-			_map[_items[i]] = i;
-			_map[_items[j]] = j;
-
-		}
-
-		public int Count => _items.Length;
-
-		// Returns true if it found the item.
-		bool DecreaseKey(T item, float newValue)
-		{
-			if (!_map.TryGetValue(item, out var current))
-				return false;
-
-			var oldValue = _values[current];
-			if (oldValue > newValue)
-			{
-				_values[current] = newValue;
-
-				// Bubble up
-				while (current != 0)
-				{
-					var parent = (current - 1) / 2; //Integer division (round down)
-					if (newValue < _values[parent])
-					{
-						Swap(current, parent);
-						current = parent;
-					}
-					else
-						break;
-				}
-			}
-
-			return true;
-		}
-
-		public void Push(T item, float value)
-		{
-			// If the item already existed, update and exit
-			if (DecreaseKey(item, value))
-				return;
-
-			// Add last (a leaf)
-			_items.Add(item);
-			_values.Add(value);
-
-			var current = Count - 1;
-			_map[item] = current;
-
-			// Keep climbing to top until parent or unable to improve heap
-			while (current != 0)
-			{
-				var parent = (current - 1) / 2; //Integer division (round down)
-				if (value < _values[parent])
-				{
-					Swap(current, parent);
-					current = parent;
-				}
-				else
-					break;
-			}
-		}
-
-		public T Peek()
-		{
-			return _items[0];
-		}
-
-		public T Pop(out float value)
-		{
-			var result = _items[0];
-			value = _values[0];
-
-			//Remove first, swap with last and decrease count
-			_items[0] = _items[Count - 1];
-			_values[0] = _values[Count - 1];
-			_values.RemoveAt(Count - 1);
-			_items.RemoveAt(Count - 1);
-
-			if (Count > 0)
-			{
-				_map[_items[0]] = 0;
-
-				// Trickle first down
-				int current = 0;
-				while (current < Count)
-				{
-					int child0 = current * 2 + 1;
-					int child1 = current * 2 + 2;
-					int best = current;
-					if (child0 < Count && _values[child0] < _values[best])
-						best = child0;
-					if (child1 < Count && _values[child1] < _values[best])
-						best = child1;
-
-					if (best == current)
-						break; // Can't improve
-					else
-					{
-						Swap(current, best);
-						current = best; // Go down that way
-					}
-				}
-			}
-
-			_map.Remove(result);
-			return result;
-		}
-
-		public T Pop()
-		{
-			return Pop(out var v);
-		}
-
+		
 		public void Dispose()
 		{
-			_items.Dispose();
-			_values.Dispose();
-			_map.Dispose();
+			items.Dispose();
+			values.Dispose();
+			map.Dispose();
 		}
 
 		public void Clear()
 		{
-			_items.Clear();
-			_values.Clear();
-			_map.Clear();
+			items.Clear();
+			values.Clear();
+			map.Clear();
 		}
-
-		public DecreseableMinHeap<T> Copy(Allocator allocator)
+		
+		public void Push(T item, float value)
 		{
-			var copy = new DecreseableMinHeap<T>();
+			// If the item already existed, update and exit
+			if (DecreaseKey(item, value))
+				return;
 
-			copy._items = new NativeList<T>(_items.Capacity, allocator);
-			copy._items.CopyFrom(_items);
-			
-			copy._values = new NativeList<float>(_values.Capacity, allocator);
-			copy._values.CopyFrom(_values);
-			
-			copy._map = new NativeHashMap<T, int>(_items.Capacity, allocator);
-			var enumerator = _map.GetEnumerator();
-			while (enumerator.MoveNext())
+			// Add last (a leaf)
+			items.Add(item);
+			values.Add(value);
+
+			var current = Count - 1;
+			map[item] = current;
+
+			// Keep climbing to top until parent or unable to improve heap
+			while (current != 0)
 			{
-				copy._map.Add(enumerator.Current.Key, enumerator.Current.Value);
+				var parent = (current - 1) / 2; //Integer division (round down)
+				if (value < values[parent])
+				{
+					Swap(current, parent);
+					current = parent;
+				}
+				else
+					break;
+			}
+		}
+		
+		public T Pop(out float value)
+		{
+			var result = items[0];
+			value = values[0];
+
+			//Remove first, swap with last and decrease count
+			items[0] = items[Count - 1];
+			values[0] = values[Count - 1];
+			values.RemoveAt(Count - 1);
+			items.RemoveAt(Count - 1);
+
+			if (Count > 0)
+			{
+				map[items[0]] = 0;
+
+				// Trickle first down
+				int current = 0;
+				while (current < Count)
+				{
+					int child0 = current * 2 + 1;
+					int child1 = current * 2 + 2;
+					int best = current;
+					if (child0 < Count && values[child0] < values[best])
+						best = child0;
+					if (child1 < Count && values[child1] < values[best])
+						best = child1;
+
+					if (best == current)
+						break; // Can't improve
+					else
+					{
+						Swap(current, best);
+						current = best; // Go down that way
+					}
+				}
 			}
 
-			return copy;
+			map.Remove(result);
+			return result;
+		}
+
+		public T Pop()
+		{
+			return Pop(out var v);
+		}
+
+		private void Swap(int i, int j)
+		{
+			var tt = items[i];
+			items[i] = items[j];
+			items[j] = tt;
+
+			var tv = values[i];
+			values[i] = values[j];
+			values[j] = tv;
+
+			map[items[i]] = i;
+			map[items[j]] = j;
+
+		}
+
+		// Returns true if it found the item.
+		private bool DecreaseKey(T item, float newValue)
+		{
+			if (!map.TryGetValue(item, out var current))
+				return false;
+
+			var oldValue = values[current];
+			if (oldValue > newValue)
+			{
+				values[current] = newValue;
+
+				// Bubble up
+				while (current != 0)
+				{
+					var parent = (current - 1) / 2; //Integer division (round down)
+					if (newValue < values[parent])
+					{
+						Swap(current, parent);
+						current = parent;
+					}
+					else break;
+				}
+			}
+
+			return true;
 		}
 	}
 }

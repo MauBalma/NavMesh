@@ -5,8 +5,7 @@ namespace Balma.Math
 {
     public static class Intersection
     {
-        public static bool RayTriangle(float3 origin, float3 direction, float3 v0, float3 v1, float3 v2,
-            out float3 baryCoordinates, out float3 intersection)
+        public static bool RayTriangle(float3 origin, float3 direction, float3 v0, float3 v1, float3 v2, out float3 baryCoordinates, out float3 intersection)
         {
             baryCoordinates = default;
             intersection = default;
