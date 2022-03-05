@@ -9,7 +9,7 @@ namespace Balma.Navigation
     public partial struct NavMesh
     {
         [BurstCompile]
-        public partial struct AStarJob : IJob
+        public struct AStarJob : IJob
         {
             [ReadOnly] public NavMesh navMesh;
             
@@ -174,5 +174,76 @@ namespace Balma.Navigation
 
             return field;
         }
+
+        public float3 SampleFieldDirection(NativeArray<FlowFieldNode> field, NavigationPoint point)
+        {
+            var visibles = new NativeList<Link>(Allocator.Temp);
+            GenerateLinks(point.worldPoint, point.triangleIndex, ref visibles, maxLinks);
+
+            var min = visibles[0];
+            var minDist = math.distance(point.worldPoint, GetPosition(min.vNeighbour)) + field[min.vNeighbour].distanceToTarget;
+
+            for (int i = 1; i < visibles.Length; i++)
+            {
+                var curr = visibles[i];
+                var dist = math.distance(point.worldPoint, GetPosition(curr.vNeighbour)) + field[curr.vNeighbour].distanceToTarget;
+
+                if (dist < minDist)
+                {
+                    min = curr;
+                    minDist = dist;
+                }
+            }
+
+            visibles.Dispose();
+
+            return math.normalize(GetPosition(min.vNeighbour) - point.worldPoint);
+        }
+        
+        [BurstCompile]
+        public struct SampleFieldDirectionJob : IJobFor
+        {
+            [ReadOnly] private NavMesh navMesh;
+            [ReadOnly] private NativeArray<FlowFieldNode> field;
+            [ReadOnly] private NativeArray<NavigationPoint> points;
+            [WriteOnly] private NativeArray<float3> results;
+
+            public SampleFieldDirectionJob(NavMesh navMesh, NativeArray<FlowFieldNode> field, NativeArray<NavigationPoint> points, NativeArray<float3> results)
+            {
+                this.navMesh = navMesh;
+                this.field = field;
+                this.points = points;
+                this.results = results;
+            }
+
+            public void Execute(int index)
+            {
+                results[index] = navMesh.SampleFieldDirection(field, points[index]);
+            }
+        }
+        
+        // public struct SampleFieldDirectionJobSingle : IJob
+        // {
+        //     [ReadOnly] private NavMesh navMesh;
+        //     [ReadOnly] private NativeArray<FlowFieldNode> field;
+        //     [ReadOnly] private NativeArray<NavigationPoint> points;
+        //     [WriteOnly] private NativeArray<float3> results;
+        //
+        //     public SampleFieldDirectionJobSingle(NavMesh navMesh, NativeArray<FlowFieldNode> field, NativeArray<NavigationPoint> points, NativeArray<float3> results)
+        //     {
+        //         this.navMesh = navMesh;
+        //         this.field = field;
+        //         this.points = points;
+        //         this.results = results;
+        //     }
+        //
+        //     public void Execute()
+        //     {
+        //         for (int index = 0; index < points.Length; index++)
+        //         {
+        //             results[index] = navMesh.SampleFieldDirection(field, points[index]);
+        //         }
+        //     }
+        // }
     }
 }

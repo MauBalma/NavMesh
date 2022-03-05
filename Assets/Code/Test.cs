@@ -24,14 +24,26 @@ public class Test : MonoBehaviour
     public MeshSetting[] meshSettings;
     public bool drawVertexIndices = true;
     public bool drawEdges = true;
+    public bool drawBorders = true;
     public bool drawIslands = true;
     public bool drawAStar = true;
     public bool drawStartVisibleVertices = true;
-    public bool drawRawFlowField = true;
+    public bool calculateFlowField = true;
+    public bool drawFlowFieldVertexDirection = true;
+    public bool drawFlowFieldGridDirectionBarycentric = true;
+    public bool drawFlowFieldGridDirectionNew = true;
+    public int gridTestSize = 256;
+    public bool flowSampleEndPoint = true;
+
+    public float directionLenght = 0.01f;
     
     public NavMesh navMesh;
 
     private static readonly float3 drawOffset = new float3(0, 1, 0) * 0.005f;
+    
+    private NativeArray<float3> gridPoints;
+    private NativeArray<NavMesh.RayCastResult> gridNavPoints;
+    private NativeList<NavMesh.NavigationPoint> gridNavPointsReal;
 
     private void Start()
     {
@@ -88,13 +100,44 @@ public class Test : MonoBehaviour
         }
         
         navMesh.GenerateLinks();
+        
+        var step = 1f / (gridTestSize + 1);
+        
+        gridPoints = new NativeArray<float3>(gridTestSize * gridTestSize, Allocator.Persistent);
+        gridNavPoints = new NativeArray<NavMesh.RayCastResult>(gridTestSize * gridTestSize, Allocator.Persistent);
+        gridNavPointsReal = new NativeList<NavMesh.NavigationPoint>(gridTestSize * gridTestSize, Allocator.Persistent);
+        for (int j = 0; j < gridTestSize; j++)
+        {
+            for (int i = 0; i < gridTestSize; i++)
+            {
+                gridPoints[i + j * gridTestSize] = new Vector3((1+i) * step, 0.1f, (1+j) * step);
+            }
+        }
+
+        new NavMesh.MultiRayCastJob(navMesh, gridPoints, Vector3.down, gridNavPoints)
+            .ScheduleParallel(gridPoints.Length, 16, default).Complete();
+
+        for (int g = 0; g < gridNavPoints.Length; g++)
+        {
+            var r = gridNavPoints[g];
+            if(r.hit)
+                gridNavPointsReal.Add(r.navPoint);
+        }
+    }
+    
+    private void OnDestroy()
+    {
+        navMesh.Dispose();
+        gridPoints.Dispose();
+        gridNavPoints.Dispose();
+        gridNavPointsReal.Dispose();
     }
 
     private void Update()
     {
         if(drawAStar) DoAStarPath();
         if(drawStartVisibleVertices) DrawStartVisibility();
-        if(drawRawFlowField) DrawRawFlowField();
+        if(calculateFlowField) CalcuFlowField();
     }
 
     private void DoAStarPath()
@@ -178,7 +221,7 @@ public class Test : MonoBehaviour
         }
     }
     
-    private void DrawRawFlowField()
+    private void CalcuFlowField()
     {
         using var startResult = new NativeReference<NavMesh.RayCastResult>(Allocator.TempJob);
 
@@ -193,16 +236,87 @@ public class Test : MonoBehaviour
             var field = new NativeArray<NavMesh.FlowFieldNode>(navMesh.VertexCount, Allocator.TempJob);
             new NavMesh.ParentFieldJob(navMesh, startResult.Value.navPoint.triangleIndex, startResult.Value.navPoint.worldPoint, field).Run();
 
-            for (int i = 0; i < field.Length; i++)
+            if (drawFlowFieldVertexDirection)
             {
-                var node = field[i];
+                for (int i = 0; i < field.Length; i++)
+                {
+                    var node = field[i];
                 
-                if(!node.valid) continue;
+                    if(!node.valid) continue;
                 
-                var p0 = navMesh.GetPosition(i);
-                var p1 = node.vParent < navMesh.VertexCount ? navMesh.GetPosition(node.vParent) : startResult.Value.navPoint.worldPoint;
+                    var p0 = navMesh.GetPosition(i);
+                    var p1 = node.vParent < navMesh.VertexCount ? navMesh.GetPosition(node.vParent) : startResult.Value.navPoint.worldPoint;
                 
-                Debug.DrawLine(p0 + drawOffset, p1 + drawOffset, Color.red, 0, true);
+                    //Debug.DrawLine(p0 + drawOffset, p0 + math.normalize(p1-p0) * directionLenght + drawOffset, Color.red, 0, true);
+                    DebugExtension.DebugArrow(p0 + drawOffset, math.normalize(p1-p0) * directionLenght, Color.red, 0, true);
+                }
+            }
+            
+            if (drawFlowFieldGridDirectionNew)
+            {
+                var directions = new NativeArray<float3>(gridNavPointsReal.Length, Allocator.TempJob);
+                new NavMesh.SampleFieldDirectionJob(navMesh, field, gridNavPointsReal, directions)
+                    .ScheduleParallel(gridNavPointsReal.Length, 16, default).Complete();
+
+                for (int i = 0; i < gridNavPointsReal.Length; i++)
+                {
+                    DebugExtension.DebugArrow(gridNavPointsReal[i].worldPoint + drawOffset,  directions[i] * directionLenght, Color.red, 0, true);
+                }
+
+                directions.Dispose();
+            }
+
+            if (drawFlowFieldGridDirectionBarycentric)
+            {
+                for (int k = 0; k < gridPoints.Length; k++)
+                {
+                    var result = gridNavPoints[k];
+
+                    if (result.hit)
+                    {
+                        //DebugExtension.DebugPoint(result.navPoint.worldPoint, Color.blue, 0.0075f, 0f);
+                        var triangle = navMesh.GetTriangle(result.navPoint.triangleIndex);
+
+                        float3 GetDir(int vertexIndex)
+                        {
+                            var n = field[vertexIndex];
+                            var p = navMesh.GetPosition(vertexIndex);
+                            var pp = n.vParent < navMesh.VertexCount ? navMesh.GetPosition(n.vParent) : startResult.Value.navPoint.worldPoint;
+                            var d = math.normalize(pp - p);
+                            return d;
+                        }
+
+                        var d0 = GetDir(triangle.v0);
+                        var d1 = GetDir(triangle.v1);
+                        var d2 = GetDir(triangle.v2);
+
+                        var dir = (d0 * result.navPoint.barycentricCoordinates[0]
+                                   + d1 * result.navPoint.barycentricCoordinates[1]
+                                   + d2 * result.navPoint.barycentricCoordinates[2]);
+
+
+                        DebugExtension.DebugArrow(result.navPoint.worldPoint + drawOffset, math.normalize(dir) * directionLenght, Color.red, 0, true);
+                    }
+                }
+            }
+
+            if (flowSampleEndPoint)
+            {
+                using var endResult = new NativeReference<NavMesh.RayCastResult>(Allocator.TempJob);
+                new NavMesh.RayCastJob(navMesh, endHandle.position, Vector3.down, endResult).Run();
+                
+                if (endResult.Value.hit)
+                {
+                    Debug.DrawLine(endResult.Value.navPoint.worldPoint, endHandle.position, Color.green, 0, true);
+                    DebugExtension.DebugWireSphere(endResult.Value.navPoint.worldPoint, Color.green, 0.01f, 0, true);
+
+                    var dir = navMesh.SampleFieldDirection(field, endResult.Value.navPoint);
+                    DebugExtension.DebugArrow(endResult.Value.navPoint.worldPoint + drawOffset, dir /** directionLenght * 3*/, Color.red, 0, true);
+                }
+                else
+                {
+                    Debug.DrawLine(endHandle.position, endHandle.position + Vector3.down * 1000, Color.red, 0, true);
+                }
             }
 
             field.Dispose();
@@ -211,11 +325,6 @@ public class Test : MonoBehaviour
         {
             Debug.DrawLine(startHandle.position, startHandle.position + Vector3.down * 1000, Color.red, 0, true);
         }
-    }
-
-    private void OnDestroy()
-    {
-        navMesh.Dispose();
     }
 
     private void OnDrawGizmos()
@@ -232,9 +341,25 @@ public class Test : MonoBehaviour
                 var p1 = navMesh.GetPosition(triangle.v1);
                 var p2 = navMesh.GetPosition(triangle.v2);
                 
-                Debug.DrawLine(p0, p1, navMesh.GetEdge(triangle.e0).IsBorder ? Color.blue : new Color(1,1,1,0.05f), 0, true);
-                Debug.DrawLine(p1, p2, navMesh.GetEdge(triangle.e1).IsBorder ? Color.blue : new Color(1,1,1,0.05f), 0, true);
-                Debug.DrawLine(p2, p0, navMesh.GetEdge(triangle.e2).IsBorder ? Color.blue : new Color(1,1,1,0.05f), 0, true);
+                if(!navMesh.GetEdge(triangle.e0).IsBorder) Debug.DrawLine(p0, p1, new Color(1,1,1,0.05f), 0, true);
+                if(!navMesh.GetEdge(triangle.e1).IsBorder) Debug.DrawLine(p1, p2, new Color(1,1,1,0.05f), 0, true);
+                if(!navMesh.GetEdge(triangle.e2).IsBorder) Debug.DrawLine(p2, p0, new Color(1,1,1,0.05f), 0, true);
+            }
+        }
+        
+        if (drawBorders)
+        {
+            for (var index = 0; index < navMesh.TriangleCount; index++)
+            {
+                var triangle = navMesh.GetTriangle(index);
+
+                var p0 = navMesh.GetPosition(triangle.v0);
+                var p1 = navMesh.GetPosition(triangle.v1);
+                var p2 = navMesh.GetPosition(triangle.v2);
+                
+                if(navMesh.GetEdge(triangle.e0).IsBorder) Debug.DrawLine(p0, p1, Color.blue, 0, true);
+                if(navMesh.GetEdge(triangle.e1).IsBorder) Debug.DrawLine(p1, p2, Color.blue, 0, true);
+                if(navMesh.GetEdge(triangle.e2).IsBorder) Debug.DrawLine(p2, p0, Color.blue, 0, true);
             }
         }
     }
